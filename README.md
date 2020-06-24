@@ -12,7 +12,7 @@ The goal of this project is to make it much easier to manage jobs on lots of mac
 ## Features
 
 - Easy manage jobs on multiple machines
-- Managemant panel
+- Management panel
 - Mail service
 - Multi-language support
 - Simple authentication and accounts manager(default administrator email and password: admin@admin.com/admin)
@@ -29,14 +29,15 @@ We encourage you to try it, it's easy to use, see how it works for you. We belie
 ```
                                                 [web]
                                                   |
-                        (add/del/update/exec jobs)|                       
-                                                [etcd]
-                                                  |
-                                         --------------------
-                                         |        |         |
-                                      [node.1]  [node.2]  [node.n]
-                          (job exec fail)|        |         |
-                        [send mail]<------------------------------
+                                     --------------------------
+           (add/del/update/exec jobs)|                        |(query job exec result)
+                                   [etcd]                 [mongodb]
+                                     |                        ^
+                            --------------------              |
+                            |        |         |              |
+                         [node.1]  [node.2]  [node.n]         |
+             (job exec fail)|        |         |              |
+          [send mail]<-----------------------------------------(job exec result)
 
 ```
 
@@ -65,22 +66,25 @@ We encourage you to try it, it's easy to use, see how it works for you. We belie
 
 Install from binary [latest release](https://github.com/kekecoco/cronsun/releases/latest)
 
-Or build from source ([feature/glide](https://github.com/kekecoco/cronsun/tree/feature/glide)), require `go >= 1.9+`, [glide](https://glide.sh/)
+Or build from source, require `go >= 1.11+`.
+> NOTE: The branch `master` is not in stable, using Cronsun for production please checkout corresponding tags.
 
 ```
-go get -u github.com/kekecoco/cronsun
-cd $GOPATH/src/github.com/kekecoco/cronsun
-git checkout feature/glide
-glide update
+export GO111MODULE=on
+go get -u github.com/shunfei/cronsun
+cd $GOPATH/src/github.com/shunfei/cronsun
+go mod vendor
 sh build.sh
 ```
 
 ### Run
 
-1. build source
-2. Open and update Etcd(`conf/etcd.json`) and MongoDB(`conf/db.json`) configurations
-3. Start cronnode: `./cronnode -conf conf/base.json`, start cronweb: `./cronweb -conf conf/base.json`
-4. Open `http://127.0.0.1:7079` in browser
+1. Install [MongoDB](http://docs.mongodb.org/manual/installation/)
+2. Install [etcd3](https://github.com/coreos/etcd)
+3. Open and update Etcd(`conf/etcd.json`) and MongoDB(`conf/db.json`) configurations
+4. Start cronnode: `./cronnode -conf conf/base.json`, start cronweb: `./cronweb -conf conf/base.json`
+5. Open `http://127.0.0.1:7079` in browser
+6. Login with username `admin@admin.com` and password `admin`
 
 ## Screenshot
 

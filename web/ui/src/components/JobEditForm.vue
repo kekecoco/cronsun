@@ -174,16 +174,16 @@
         this.job.rules[index][key] = val;
       },
 
-      submit: function(){
-        var exceptCode = this.action == 'CREATE' ? 201 : 200;
-        this.loading = true;
-        var vm = this;
-        this.$rest.PUT('job', this.job)
-          .onsucceed(exceptCode, ()=>{vm.$router.push('/job')})
-          .onfailed((resp)=>{vm.$bus.$emit('error', resp)})
-          .onend(()=>{vm.loading=false})
-          .do();
-      },
+    submit: function(){
+      var exceptCode = this.action == 'CREATE' ? 201 : 200;
+      this.loading = true;
+      var vm = this;
+      this.$rest.PUT('job', this.job)
+        .onsucceed(exceptCode, ()=>{vm.$router.push({path:'/job',query:vm.$route.query})})
+        .onfailed((resp)=>{vm.$bus.$emit('error', resp)})
+        .onend(()=>{vm.loading=false})
+        .do();
+    },
 
       newRandomRuleId: function(){
         return 'NEW'+Math.random().toString();
@@ -216,7 +216,7 @@
             }
           }
         }).
-        onfailed((msg)=> vm.$bus.$emit('error', data)).
+        onfailed((msg)=> vm.$bus.$emit('error', msg)).
         do();
       }
 

@@ -1,18 +1,22 @@
 package node
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	client "github.com/coreos/etcd/clientv3"
-
-	"github.com/kekecoco/cronsun"
-	"github.com/kekecoco/cronsun/conf"
-	"github.com/kekecoco/cronsun/log"
-	"github.com/kekecoco/cronsun/node/cron"
-	"github.com/kekecoco/cronsun/utils"
+	"github.com/shunfei/cronsun"
+	"github.com/shunfei/cronsun/conf"
+	"github.com/shunfei/cronsun/log"
+	"github.com/shunfei/cronsun/node/cron"
+	"github.com/shunfei/cronsun/utils"
 )
 
 // Node 执行 cron 命令服务的结构体
@@ -56,6 +60,7 @@ func NewNode(cfg *conf.Conf) (n *Node, err error) {
 		Node: &cronsun.Node{
 			ID:       uuid,
 			PID:      strconv.Itoa(os.Getpid()),
+			PIDFile:  strings.TrimSpace(cfg.PIDFile),
 			IP:       ip.String(),
 			Hostname: hostname,
 		},
@@ -75,9 +80,6 @@ func NewNode(cfg *conf.Conf) (n *Node, err error) {
 
 // 注册到 /cronsun/node/xx
 func (n *Node) Register() (err error) {
-	// remove old version(< 0.3.0) node info
-	cronsun.DefalutClient.Delete(conf.Config.Node + n.IP)
-
 	pid, err := n.Node.Exist()
 	if err != nil {
 		return
@@ -101,7 +103,44 @@ func (n *Node) set() error {
 	}
 
 	n.lID = resp.ID
+	n.writePIDFile()
+
 	return nil
+}
+
+func (n *Node) writePIDFile() {
+	if len(n.PIDFile) == 0 {
+		return
+	}
+
+	filename := "cronnode_pid"
+	if !strings.HasSuffix(n.PIDFile, "/") {
+		filename = path.Base(n.PIDFile)
+	}
+
+	dir := path.Dir(n.PIDFile)
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		log.Errorf("Failed to write pid file: %s. you can change PIDFile config in base.json", err)
+		return
+	}
+
+	n.PIDFile = path.Join(dir, filename)
+	err = ioutil.WriteFile(n.PIDFile, []byte(n.PID), 0644)
+	if err != nil {
+		log.Errorf("Failed to write pid file: %s. you can change PIDFile config in base.json", err)
+		return
+	}
+}
+
+func (n *Node) removePIDFile() {
+	if len(n.PIDFile) == 0 {
+		return
+	}
+
+	if err := os.Remove(n.PIDFile); err != nil {
+		log.Warnf("Failed to remove pid file: %s", err)
+	}
 }
 
 // 断网掉线重新注册
@@ -265,23 +304,32 @@ func (n *Node) addGroup(g *cronsun.Group) {
 }
 
 func (n *Node) delGroup(id string) {
-	delete(n.groups, id)
-	n.link.delGroup(id)
+	// delete job first
+	defer n.link.delGroup(id)
+	defer delete(n.groups, id)
 
-	job, ok := n.jobs[id]
-	// 之前此任务没有在当前结点执行
-	if !ok {
+	jobLinks := n.link[id]
+	if len(jobLinks) == 0 {
 		return
 	}
 
-	cmds := job.Cmds(n.ID, n.groups)
-	if len(cmds) == 0 {
-		return
+	for jID := range jobLinks {
+		job, ok := n.jobs[jID]
+		// 之前此任务没有在当前结点执行
+		if !ok {
+			continue
+		}
+
+		cmds := job.Cmds(n.ID, n.groups)
+		if len(cmds) == 0 {
+			continue
+		}
+
+		for _, cmd := range cmds {
+			n.delCmd(cmd)
+		}
 	}
 
-	for _, cmd := range cmds {
-		n.delCmd(cmd)
-	}
 	return
 }
 
@@ -339,6 +387,7 @@ func (n *Node) groupAddNode(g *cronsun.Group) {
 			}
 
 			job.Init(n.ID, n.Hostname, n.IP)
+			n.jobs[jid] = job
 		}
 
 		cmds := job.Cmds(n.ID, n.groups)
@@ -382,6 +431,14 @@ func (n *Node) groupRmNode(g, og *cronsun.Group) {
 	n.groups[g.ID] = g
 }
 
+func (n *Node) KillExcutingProc(process *cronsun.Process) {
+	pid, _ := strconv.Atoi(process.ID)
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
+		log.Warnf("process:[%d] force kill failed, error:[%s]\n", pid, err)
+		return
+	}
+}
+
 func (n *Node) watchJobs() {
 	rch := cronsun.WatchJobs()
 	for wresp := range rch {
@@ -409,6 +466,35 @@ func (n *Node) watchJobs() {
 				n.delJob(cronsun.GetIDFromKey(string(ev.Kv.Key)))
 			default:
 				log.Warnf("unknown event type[%v] from job[%s]", ev.Type, string(ev.Kv.Key))
+			}
+		}
+	}
+}
+
+func (n *Node) watchExcutingProc() {
+	rch := cronsun.WatchProcs(n.ID)
+
+	for wresp := range rch {
+		for _, ev := range wresp.Events {
+			switch {
+			case ev.IsModify():
+				key := string(ev.Kv.Key)
+				process, err := cronsun.GetProcFromKey(key)
+				if err != nil {
+					log.Warnf("err: %s, kv: %s", err.Error(), ev.Kv.String())
+					continue
+				}
+
+				val := string(ev.Kv.Value)
+				pv := &cronsun.ProcessVal{}
+				err = json.Unmarshal([]byte(val), pv)
+				if err != nil {
+					continue
+				}
+				process.ProcessVal = *pv
+				if process.Killed {
+					n.KillExcutingProc(process)
+				}
 			}
 		}
 	}
@@ -465,6 +551,18 @@ func (n *Node) watchOnce() {
 	}
 }
 
+func (n *Node) watchCsctl() {
+	rch := cronsun.WatchCsctl()
+	for wresp := range rch {
+		for _, ev := range wresp.Events {
+			switch {
+			case ev.IsCreate(), ev.IsModify():
+				n.executCsctlCmd(ev.Kv.Key, ev.Kv.Value)
+			}
+		}
+	}
+}
+
 // 启动服务
 func (n *Node) Run() (err error) {
 	go n.keepAlive()
@@ -481,8 +579,10 @@ func (n *Node) Run() (err error) {
 
 	n.Cron.Start()
 	go n.watchJobs()
+	go n.watchExcutingProc()
 	go n.watchGroups()
 	go n.watchOnce()
+	go n.watchCsctl()
 	n.Node.On()
 	return
 }
@@ -494,4 +594,5 @@ func (n *Node) Stop(i interface{}) {
 	n.Node.Del()
 	n.Client.Close()
 	n.Cron.Stop()
+	n.removePIDFile()
 }

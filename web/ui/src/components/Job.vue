@@ -35,7 +35,7 @@
         <tr>
           <th class="collapsing center aligned">{{$L('operation')}}</th>
           <th class="collapsing center aligned">{{$L('status')}}</th>
-          <th width="200px" class="center aligned">{{$L('group')}}</th>
+          <th class="center aligned">{{$L('group')}}</th>
           <th class="center aligned">{{$L('user')}}</th>
           <th class="center aligned">{{$L('name')}}</th>
           <th class="center aligned">{{$L('latest executed')}}</th>
@@ -48,7 +48,7 @@
             <div class="ui icon dropdown" v-show="!batched">
               <i class="content icon"></i>
               <div class="menu">
-                <div class="item" v-on:click="$router.push('/job/edit/'+job.group+'/'+job.id)">{{$L('edit')}}</div>
+                <div class="item" v-on:click="editJob(job.group, job.id)">{{$L('edit')}}</div>
                 <div class="item" v-if="job.pause" v-on:click="changeStatus(job.group, job.id, index, !job.pause)">{{$L('open')}}</div>
                 <div class="item" v-if="!job.pause" v-on:click="changeStatus(job.group, job.id, index, !job.pause)">{{$L('pause')}}</div>
                 <div class="divider"></div>
@@ -62,10 +62,12 @@
           <td class="center aligned"><i class="icon" v-bind:class="{pause: job.pause, play: !job.pause, green: !job.pause}"></i></td>
           <td>{{job.group}}</td>
           <td>{{job.user && job.user.length > 0 ? job.user : '-'}}</td>
-          <td><router-link :to="'/job/edit/'+job.group+'/'+job.id">{{job.name}}</router-link></td>
+          <td><router-link :to="buildEditJobURL(job.group, job.id)">{{job.name}}</router-link></td>
           <td>
             <span v-if="!job.latestStatus">-</span>
             <span v-else>{{formatLatest(job.latestStatus)}}</span>
+            <br/>
+            <span>{{formatNextRunTime(job.nextRunTime)}}</span>
           </td>
           <td :class="{error: job.latestStatus && !job.latestStatus.success}">
             <span v-if="!job.latestStatus">-</span>
@@ -163,6 +165,19 @@ export default {
       this.fetchList(this.buildQuery());
     },
 
+    editJob: function(group, id){
+        this.$router.push( this.buildEditJobURL(group, id) );
+    },
+
+    buildEditJobURL: function(group, id){
+        var query = this.buildQuery();
+        if(query == ''){
+            return '/job/edit/'+group+'/'+id;
+        }else{
+            return '/job/edit/'+group+'/'+id+ '?'+query;
+        }
+    },
+
     removeJob: function(group, id, index){
       var vm = this;
       this.$rest.DELETE('job/'+group+'-'+id).onsucceed(204, (resp)=>{
@@ -184,6 +199,10 @@ export default {
 
     formatLatest: function(latest){
       return this.$L('on {node} took {times}, {begin ~ end}', this.$store.getters.hostshowsWithoutTip(latest.node), formatDuration(latest.beginTime, latest.endTime), formatTime(latest.beginTime, latest.endTime));
+    },
+
+    formatNextRunTime: function(nextRunTime){
+      return this.$L('next schedule: {nextTime}', nextRunTime);
     },
 
     showExecuteJobModal: function(jobName, jobGroup, jobId){
