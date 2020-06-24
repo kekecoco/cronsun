@@ -16,28 +16,23 @@
       <div class="field">
         <div class="ui radio checkbox">
           <input type="radio" v-model="job.kind" name="kind" value="0" tabindex="0" class="hidden"/>
-          <label>{{$L('group level common')}}
-            <i class="help circle link icon" data-position="top right" :data-html="$L('group level common help')" data-variation="wide"></i>
-          </label>
+          <label>{{$L('common job')}}</label>
         </div>
       </div>
       <div class="field">
         <div class="ui radio checkbox">
           <input type="radio" v-model="job.kind" name="kind" value="1" tabindex="0" class="hidden"/>
-          <label>{{$L('common job')}}
-            <i class="help circle link icon" data-position="top right" :data-html="$L('common job help')" data-variation="wide"></i>
-          </label>
+          <label>{{$L('single node single process')}}</label>
         </div>
       </div>
       <div class="field">
         <div class="ui radio checkbox">
           <input type="radio" v-model="job.kind" name="kind" value="2" tabindex="0" class="hidden"/>
-          <label>{{$L('single node single process')}}
-            <i class="help circle link icon" data-position="top right" :data-html="$L('single node single process help')" data-variation="wide"></i>
+          <label>{{$L('group level common')}}
+            <i class="help circle link icon" data-position="top right" :data-html="$L('group level common help')" data-variation="wide"></i>
           </label>
         </div>
       </div>
-
     </div>
     <div class="two fields">
       <div class="field">
